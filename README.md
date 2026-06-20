@@ -265,10 +265,3 @@ source ~/vision_sim_ws/install/setup.bash
 python3 sim_waypoint_node.py
 ```
 
-## 11. GitHub 发布
-
-第一次上传 GitHub 的详细步骤见：
-
-```text
-GITHUB_RELEASE_GUIDE.md
-```
