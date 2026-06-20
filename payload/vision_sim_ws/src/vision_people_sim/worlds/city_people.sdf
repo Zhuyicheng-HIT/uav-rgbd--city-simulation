@@ -1,0 +1,42 @@
+<?xml version="1.0" ?>
+<sdf version="1.10">
+  <world name="city_people">
+    <physics name="fast_visual_physics" type="ignored"><max_step_size>0.005</max_step_size><real_time_factor>1.0</real_time_factor></physics>
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <scene><ambient>0.96 0.96 0.92 1</ambient><background>0.82 0.90 1.0 1</background><shadows>true</shadows></scene>
+    <light name="sun" type="directional"><pose>0 0 24 0.45 0.25 0</pose><diffuse>1.0 1.0 0.95 1</diffuse><specular>0.55 0.55 0.50 1</specular><direction>-0.25 0.18 -0.95</direction></light>
+    <model name="visual_ground"><static>true</static><link name="link"><visual name="ground_visual"><geometry><box><size>34 26 0.02</size></box></geometry><pose>0 0 -0.01 0 0 0</pose><material><diffuse>0.52 0.68 0.50 1</diffuse></material></visual></link></model>
+    <model name="visual_city_block"><static>true</static><link name="link">
+      <visual name="road_main"><pose>0 0 0.005 0 0 0</pose><geometry><box><size>30 3.2 0.03</size></box></geometry><material><diffuse>0.035 0.038 0.042 1</diffuse></material></visual>
+      <visual name="road_cross"><pose>0 0 0.006 0 0 0</pose><geometry><box><size>3.2 22 0.035</size></box></geometry><material><diffuse>0.035 0.038 0.042 1</diffuse></material></visual>
+      <visual name="road_outer_top"><pose>0 9.4 0.006 0 0 0</pose><geometry><box><size>30 2.8 0.035</size></box></geometry><material><diffuse>0.035 0.038 0.042 1</diffuse></material></visual>
+      <visual name="road_outer_bottom"><pose>0 -9.4 0.006 0 0 0</pose><geometry><box><size>30 2.8 0.035</size></box></geometry><material><diffuse>0.035 0.038 0.042 1</diffuse></material></visual>
+      <visual name="road_outer_left"><pose>-13.6 0 0.006 0 0 0</pose><geometry><box><size>2.8 22 0.035</size></box></geometry><material><diffuse>0.035 0.038 0.042 1</diffuse></material></visual>
+      <visual name="road_outer_right"><pose>13.6 0 0.006 0 0 0</pose><geometry><box><size>2.8 22 0.035</size></box></geometry><material><diffuse>0.035 0.038 0.042 1</diffuse></material></visual>
+      <visual name="lane_main"><pose>0 0 0.04 0 0 0</pose><geometry><box><size>26 0.055 0.01</size></box></geometry><material><diffuse>0.92 0.84 0.2 1</diffuse></material></visual>
+      <visual name="lane_cross"><pose>0 0 0.041 0 0 0</pose><geometry><box><size>0.055 18 0.01</size></box></geometry><material><diffuse>0.92 0.84 0.2 1</diffuse></material></visual>
+      <visual name="sidewalk_north"><pose>0 2.35 0.02 0 0 0</pose><geometry><box><size>29 0.70 0.025</size></box></geometry><material><diffuse>0.80 0.80 0.75 1</diffuse></material></visual>
+      <visual name="sidewalk_south"><pose>0 -2.35 0.02 0 0 0</pose><geometry><box><size>29 0.70 0.025</size></box></geometry><material><diffuse>0.80 0.80 0.75 1</diffuse></material></visual>
+      <visual name="sidewalk_east"><pose>2.35 0 0.021 0 0 0</pose><geometry><box><size>0.70 21 0.025</size></box></geometry><material><diffuse>0.80 0.80 0.75 1</diffuse></material></visual>
+      <visual name="sidewalk_west"><pose>-2.35 0 0.021 0 0 0</pose><geometry><box><size>0.70 21 0.025</size></box></geometry><material><diffuse>0.80 0.80 0.75 1</diffuse></material></visual>
+      <visual name="building_a"><pose>-8 4.8 2.0 0 0 0</pose><geometry><box><size>3.2 2.4 4.0</size></box></geometry><material><diffuse>0.55 0.57 0.60 1</diffuse><pbr><metal><albedo_map>model://textured_person/materials/textures/facade_a.png</albedo_map></metal></pbr></material></visual>
+      <visual name="building_b"><pose>-4.5 7.1 2.7 0 0 0</pose><geometry><box><size>2.8 2.3 5.4</size></box></geometry><material><diffuse>0.42 0.45 0.49 1</diffuse><pbr><metal><albedo_map>model://textured_person/materials/textures/facade_b.png</albedo_map></metal></pbr></material></visual>
+      <visual name="building_c"><pose>7.8 4.6 2.5 0 0 0</pose><geometry><box><size>3.4 2.5 5.0</size></box></geometry><material><diffuse>0.58 0.52 0.46 1</diffuse><pbr><metal><albedo_map>model://textured_person/materials/textures/facade_a.png</albedo_map></metal></pbr></material></visual>
+      <visual name="building_d"><pose>5.6 -5.4 1.9 0 0 0</pose><geometry><box><size>3.0 3.0 3.8</size></box></geometry><material><diffuse>0.40 0.43 0.44 1</diffuse><pbr><metal><albedo_map>model://textured_person/materials/textures/facade_b.png</albedo_map></metal></pbr></material></visual>
+      <visual name="building_e"><pose>-8.5 -5.8 2.2 0 0 0</pose><geometry><box><size>3.3 2.6 4.4</size></box></geometry><material><diffuse>0.50 0.52 0.54 1</diffuse><pbr><metal><albedo_map>model://textured_person/materials/textures/facade_a.png</albedo_map></metal></pbr></material></visual>
+    </link></model>
+    <include><uri>model://textured_person</uri><name>person_north</name><pose>-10 3.05 0.05 0 0 0</pose></include>
+    <include><uri>model://textured_person</uri><name>person_south</name><pose>-2.5 -3.05 0.05 0 0 0</pose></include>
+    <include><uri>model://textured_person</uri><name>person_block</name><pose>5 6.8 0.05 0 0 0</pose></include>
+    <include><uri>model://textured_vehicle</uri><name>vehicle_main</name><pose>-12 0.85 0.05 0 0 0</pose></include>
+    <include><uri>model://apm_iris_follow_static</uri><name>drone_above_vehicle_main</name><pose>-12 0.75 3.0 0 0 0</pose></include>
+    <include><uri>model://textured_vehicle</uri><name>vehicle_cross</name><pose>0.75 4.0 0.05 0 0 -1.5708</pose></include>
+    <include><uri>model://textured_vehicle</uri><name>vehicle_loop</name><pose>4 -9.4 0.05 0 0 0</pose></include>
+  </world>
+</sdf>

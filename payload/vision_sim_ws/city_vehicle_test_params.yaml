@@ -1,0 +1,6 @@
+/people_motion:
+  ros__parameters:
+    world_name: city_people
+    rate_hz: 2.0
+    agents_json: >-
+      [{"name":"person_north","path_type":"line","points":[[-6,0,0.05],[6,0,0.05]],"speed":0.85},{"name":"vehicle_main","path_type":"line","points":[[-7,0.75,0.05],[7,0.75,0.05]],"speed":1.8}]

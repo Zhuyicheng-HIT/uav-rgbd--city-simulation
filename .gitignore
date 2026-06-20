@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+
+# ROS / colcon
+build/
+install/
+log/
+.colcon/
+
+# Local generated reports
+rendered_report/
+report_assets/
+
+# Backup/original files generated during local editing
+*.bak
+*.bak_*
+*.orig
+
+# Gazebo / simulator runtime
+*.log
+*.tmp
+*.db
+*.db3
+*.mcap
+*.bag
+*.bag.active
+*.ulg
+*.tlog
+
+# Large model/runtime artifacts
+*.pt
+*.onnx
+*.engine
+*.trt
+*.weights
+
+# Video / images captured from experiments
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.png
+*.jpg
+*.jpeg
+
+# Local config
+.env
+*.local
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

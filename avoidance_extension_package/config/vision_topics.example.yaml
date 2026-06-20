@@ -1,0 +1,19 @@
+camera:
+  color_image: /camera/camera/color/image_raw
+  depth_image: /camera/camera/depth/image_rect_raw
+  color_camera_info: /camera/camera/color/camera_info
+
+mavros:
+  state: /mavros/state
+  local_pose: /mavros/local_position/pose
+  imu: /mavros/imu/data
+
+vision:
+  waypoint: /vision/avoidance_waypoint
+  status: /vision/avoidance_status
+
+yolo:
+  confidence: 0.60
+  sim_model: models/irreality.engine
+  real_model: models/people.engine
+

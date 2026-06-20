@@ -1,0 +1,20 @@
+Package: UAV RGB-D Vision Simulation and Avoidance
+Date: 2026-06-20
+Recommended OS: Ubuntu 22.04 / WSL2
+Recommended user: zyc
+ROS: Humble
+Main payload:
+  payload/vision_sim_ws
+  payload/vision_avoid
+  payload/real_drone
+  payload/ardupilot_gazebo
+Excluded:
+  ArduPilot full source
+  build/install/log
+  rosbag/db3/video
+  real-flight YOLO weights
+  package caches
+Included model:
+  payload/vision_avoid/irreality.pt
+  payload/vision_avoid/irreality.engine
+  payload/vision_sim_ws/models/irreality.pt

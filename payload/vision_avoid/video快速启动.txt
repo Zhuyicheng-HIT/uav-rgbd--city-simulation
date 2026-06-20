@@ -1,0 +1,2 @@
+cd /home/zyc/vision_avoid
+python3 waypoint_node.py

@@ -1,0 +1,6 @@
+/people_motion:
+  ros__parameters:
+    world_name: basic_people
+    rate_hz: 2.0
+    agents_json: >-
+      [{"name":"person_line","path_type":"line","points":[[-4.0,0.0,0.05],[4.0,0.0,0.05]],"speed":0.8}]
