@@ -38,6 +38,31 @@ report_assets/
 *.trt
 *.weights
 
+# Project release models intentionally published for simulation reuse
+!payload/vision_avoid/irreality.pt
+!payload/vision_avoid/irreality.engine
+!payload/vision_sim_ws/models/irreality.pt
+
+# Local process files generated while preparing reports/slides
+100M
+__*.py
+build_*.py
+extract_*.py
+generate_*.py
+inspect_*.py
+academic_polish_report.py
+conservative_trim_report.py
+fix_summaries_report.py
+format_final_report.py
+tmp_inspect_*.py
+update_section_*.py
+*_extract.txt
+key_code_snippets.txt
+integrated_parts_extract.txt
+PPT/work_rebuild/
+PPT/素材/
+PPT/*.txt
+
 # Video / images captured from experiments
 *.mp4
 *.avi

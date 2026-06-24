@@ -8,6 +8,7 @@
 - 不读取回放视频。
 - 不打开可视化窗口。
 - 不使用仿真 pose fallback。
+- 不直接打开飞控串口，飞控通信统一交给 MAVROS。
 - 保留安全点计算、目标跟踪、飞控状态读取和日志记录。
 - 保留人工接管能力。
 
@@ -22,9 +23,10 @@
 
 ## 输出
 
-- 视觉安全点。
-- 视觉状态。
-- 状态日志。
+- 视觉节点输出 `/vision/avoidance_waypoint` 安全点。
+- 视觉节点输出 `/vision/avoidance_status` 状态。
+- 状态机向 `/mavros/setpoint_position/local` 发布位置 setpoint。
+- 视觉日志、状态机日志和 MAVROS 飞控话题日志。
 
 建议日志：
 
@@ -32,7 +34,8 @@
 logs/
 ├── vision_events.jsonl
 ├── vision_summary.csv
-└── state_machine.csv
+├── state_machine.csv
+└── fc_state_snapshots.csv
 ```
 
 每条日志至少包含：
@@ -51,11 +54,11 @@ logs/
 1. 桌面静态测试：确认 D435i 图像、深度、CameraInfo 正常。
 2. 地面联调：确认 MAVROS state、pose、IMU 正常。
 3. 不解锁测试：运行视觉节点，只记录日志，不发送控制。
-4. 低高度悬停测试：只观察安全点是否稳定。
-5. 人工保护下半自动测试：状态机每个阶段单独验证。
-6. 全流程测试。
+4. 旁路记录测试：运行 `flight_record_mavlink.py`，确认它只订阅 MAVROS 话题。
+5. 低高度悬停测试：只观察安全点是否稳定。
+6. 人工保护下半自动测试：状态机每个阶段单独验证。
+7. 全流程测试。
 
 ## 风险提示
 
 真实飞行中安全点只应作为辅助决策。第一次测试必须在空旷环境进行，并保留遥控器人工接管。
-

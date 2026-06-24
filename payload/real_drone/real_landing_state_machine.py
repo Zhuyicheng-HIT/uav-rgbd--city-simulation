@@ -35,6 +35,7 @@ class RealLandingStateMachine(Node):
     def __init__(self, args) -> None:
         super().__init__("real_vision_landing_state_machine")
         self.args = args
+        args.log_dir = str(Path(args.log_dir).expanduser())
         self.state = State()
         self.pose: Optional[PoseStamped] = None
         self.safe_world: Optional[Tuple[float, float, float]] = None
@@ -42,7 +43,7 @@ class RealLandingStateMachine(Node):
         self.vision_status = {}
         self.cmd_x = self.cmd_y = self.cmd_z = self.cmd_yaw = 0.0
 
-        self.create_subscription(State, "/mavros/state", self._state_cb, 10)
+        self.create_subscription(State, args.state_topic, self._state_cb, 10)
         self.create_subscription(PoseStamped, args.local_pose_topic, self._pose_cb, qos_profile_sensor_data)
         self.create_subscription(PoseStamped, args.vision_waypoint_topic, self._waypoint_cb, 10)
         self.create_subscription(String, args.vision_status_topic, self._vision_status_cb, 10)
@@ -138,10 +139,17 @@ class RealLandingStateMachine(Node):
 
     def wait_ready(self) -> None:
         self.get_logger().info("Waiting for MAVROS connection and local pose...")
+        last_log = 0.0
         while rclpy.ok():
             rclpy.spin_once(self, timeout_sec=0.1)
             if self.state.connected and self.pose is not None:
                 break
+            now = time.monotonic()
+            if now - last_log >= 2.0:
+                last_log = now
+                self.get_logger().info(
+                    f"Still waiting: state.connected={self.state.connected}, pose_seen={self.pose is not None}"
+                )
         for cli in (self.mode_cli, self.arm_cli, self.takeoff_cli):
             cli.wait_for_service(timeout_sec=20.0)
 
@@ -261,11 +269,12 @@ def parse_args():
     p.add_argument("--takeoff-free-climb-seconds", type=float, default=20.0)
     p.add_argument("--command-retry-seconds", type=float, default=45.0)
     p.add_argument("--guided-mode", default="GUIDED")
+    p.add_argument("--state-topic", default="/mavros/state")
     p.add_argument("--local-pose-topic", default="/mavros/local_position/pose")
     p.add_argument("--setpoint-topic", default="/mavros/setpoint_position/local")
     p.add_argument("--vision-waypoint-topic", default="/vision/avoidance_waypoint")
     p.add_argument("--vision-status-topic", default="/vision/avoidance_status")
-    p.add_argument("--log-dir", default="/home/zyc/real_drone/vision_logs")
+    p.add_argument("--log-dir", default="~/real_drone/vision_logs")
     return p.parse_args()
 
 

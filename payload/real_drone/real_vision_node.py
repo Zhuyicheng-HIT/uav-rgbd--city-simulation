@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Real-flight lightweight D435i + MAVLink vision waypoint node.
+"""Real-flight lightweight D435i + MAVROS vision waypoint node.
 
 No replay, no Gazebo, no OpenCV windows. The node reads a downward D435i,
-uses MAVLink LOCAL_POSITION_NED + ATTITUDE as the aircraft state, publishes a
-world-frame safe waypoint for the landing state machine, and records compact
-JSONL/CSV logs for post-flight review.
+uses MAVROS local pose/state as the aircraft state, publishes a world-frame
+safe waypoint for the landing state machine, and records compact JSONL/CSV logs
+for post-flight review.
 """
 
 from __future__ import annotations
@@ -14,9 +14,8 @@ import argparse
 import csv
 import json
 import math
-import threading
 import time
-from collections import deque
+from collections import deque, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -26,8 +25,9 @@ import numpy as np
 import pyrealsense2 as rs
 import rclpy
 from geometry_msgs.msg import PoseStamped
-from pymavlink import mavutil
+from mavros_msgs.msg import State
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from std_msgs.msg import String
 from ultralytics import YOLO
 
@@ -36,8 +36,8 @@ WAYPOINT_TOPIC = "/vision/avoidance_waypoint"
 STATUS_TOPIC = "/vision/avoidance_status"
 WAYPOINT_FRAME_ID = "map"
 
-DEFAULT_MODEL = "/home/zyc/vision_avoid/irreality.engine"
-YOLO_CONF = 0.60
+DEFAULT_MODEL = "~/real_drone/people_new.pt"
+YOLO_CONF = 0.30
 YOLO_IOU = 0.05
 YOLO_IMGSZ = 640
 MIN_DEPTH_M = 0.2
@@ -67,6 +67,38 @@ DRONE_DISTANCE_WEIGHT = 1.0
 ORIGIN_DISTANCE_WEIGHT = 0.25
 
 
+
+class StageProfiler:
+    def __init__(self, interval_s: float = 2.0, window: int = 120) -> None:
+        self.interval_s = interval_s
+        self.samples = defaultdict(lambda: deque(maxlen=window))
+        self.last_print = time.monotonic()
+
+    def add(self, **seconds: float) -> None:
+        for name, value in seconds.items():
+            self.samples[name].append(max(0.0, float(value)))
+
+    def maybe_print(self, prefix: str = "PROFILE") -> None:
+        now = time.monotonic()
+        if now - self.last_print < self.interval_s:
+            return
+        self.last_print = now
+        order = ["capture", "pose", "convert", "yolo", "track", "plan", "publish", "log", "spin", "total"]
+        parts = []
+        total_avg = None
+        for name in order:
+            vals = self.samples.get(name)
+            if not vals:
+                continue
+            avg_ms = sum(vals) / len(vals) * 1000.0
+            if name == "total":
+                total_avg = sum(vals) / len(vals)
+            parts.append(f"{name}={avg_ms:.1f}ms")
+        if total_avg and total_avg > 0:
+            parts.append(f"fps={1.0 / total_avg:.1f}")
+        print(prefix + " " + " ".join(parts), flush=True)
+
+
 @dataclass
 class FcPose:
     north: float = 0.0
@@ -77,6 +109,7 @@ class FcPose:
     yaw: float = 0.0
     mode: str = ""
     armed: bool = False
+    connected: bool = False
     valid_pos: bool = False
     valid_att: bool = False
 
@@ -145,68 +178,53 @@ class LocalMap:
         return self.world_to_local(pose.north, pose.east)
 
 
-class MavlinkState:
-    def __init__(self, conn: str, baud: int) -> None:
-        self.conn = conn
-        self.baud = baud
-        self.pose = FcPose()
-        self.lock = threading.Lock()
-        self.stop = threading.Event()
-        self.thread = threading.Thread(target=self._run, daemon=True)
+def yaw_from_quat(x: float, y: float, z: float, w: float) -> float:
+    return math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
 
-    def start(self) -> None:
-        self.thread.start()
+
+def enu_yaw_to_ned_yaw(yaw_enu: float) -> float:
+    return math.atan2(math.sin(math.pi * 0.5 - yaw_enu), math.cos(math.pi * 0.5 - yaw_enu))
+
+
+def ned_yaw_to_enu_yaw(yaw_ned: float) -> float:
+    return math.atan2(math.sin(math.pi * 0.5 - yaw_ned), math.cos(math.pi * 0.5 - yaw_ned))
+
+
+class MavrosState:
+    """Aircraft state adapter.
+
+    MAVROS is the only process that should open /dev/ttyACM0. This adapter
+    reads /mavros topics and converts MAVROS ENU pose into the N/E/D terms used
+    by the planner.
+    """
+
+    def __init__(self) -> None:
+        self.pose = FcPose()
+        self.pose_seen = False
+        self.state_seen = False
 
     def latest(self) -> FcPose:
-        with self.lock:
-            return FcPose(**self.pose.__dict__)
+        return FcPose(**self.pose.__dict__)
 
-    def _request_rate(self, master, msg_id: int, hz: float) -> None:
-        try:
-            master.mav.command_long_send(
-                master.target_system,
-                master.target_component,
-                mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
-                0,
-                msg_id,
-                int(1_000_000 / hz),
-                0,
-                0,
-                0,
-                0,
-                0,
-            )
-        except Exception:
-            pass
+    def state_cb(self, msg: State) -> None:
+        self.state_seen = True
+        self.pose.mode = msg.mode
+        self.pose.armed = bool(msg.armed)
+        self.pose.connected = bool(msg.connected)
 
-    def _run(self) -> None:
-        master = mavutil.mavlink_connection(self.conn, baud=self.baud, autoreconnect=True)
-        master.wait_heartbeat()
-        self._request_rate(master, mavutil.mavlink.MAVLINK_MSG_ID_HEARTBEAT, 1)
-        self._request_rate(master, mavutil.mavlink.MAVLINK_MSG_ID_LOCAL_POSITION_NED, 30)
-        self._request_rate(master, mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE, 50)
-        while not self.stop.is_set():
-            msg = master.recv_match(blocking=True, timeout=0.2)
-            if msg is None:
-                continue
-            msg_type = msg.get_type()
-            with self.lock:
-                if msg_type == "HEARTBEAT":
-                    try:
-                        self.pose.mode = mavutil.mode_string_v10(msg)
-                    except Exception:
-                        self.pose.mode = ""
-                    self.pose.armed = bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
-                elif msg_type == "LOCAL_POSITION_NED":
-                    self.pose.north = float(msg.x)
-                    self.pose.east = float(msg.y)
-                    self.pose.down = float(msg.z)
-                    self.pose.valid_pos = True
-                elif msg_type == "ATTITUDE":
-                    self.pose.roll = float(msg.roll)
-                    self.pose.pitch = float(msg.pitch)
-                    self.pose.yaw = float(msg.yaw)
-                    self.pose.valid_att = True
+    def pose_cb(self, msg: PoseStamped) -> None:
+        p = msg.pose.position
+        q = msg.pose.orientation
+        yaw_enu = yaw_from_quat(q.x, q.y, q.z, q.w)
+        self.pose.east = float(p.x)
+        self.pose.north = float(p.y)
+        self.pose.down = -float(p.z)
+        self.pose.roll = 0.0
+        self.pose.pitch = 0.0
+        self.pose.yaw = enu_yaw_to_ned_yaw(yaw_enu)
+        self.pose.valid_pos = True
+        self.pose.valid_att = True
+        self.pose_seen = True
 
 
 class KalmanTrack:
@@ -438,16 +456,23 @@ class RealVisionNode(Node):
     def __init__(self, args) -> None:
         super().__init__("real_vision_waypoint_node")
         self.args = args
+        args.model = str(Path(args.model).expanduser())
+        args.log_dir = str(Path(args.log_dir).expanduser())
         self.wp_pub = self.create_publisher(PoseStamped, WAYPOINT_TOPIC, 10)
         self.status_pub = self.create_publisher(String, STATUS_TOPIC, 10)
         self.model = YOLO(args.model, task="detect")
-        self.mav = MavlinkState(args.mavlink, args.baud)
-        self.mav.start()
+        self.fc = MavrosState()
+        self.create_subscription(State, args.state_topic, self.fc.state_cb, 10)
+        self.create_subscription(PoseStamped, args.local_pose_topic, self.fc.pose_cb, qos_profile_sensor_data)
         self.tracker = Tracker()
         self.local_map = LocalMap()
         self.last_safe: Optional[Tuple[float, float]] = None
+        self.last_pose_wait_log = 0.0
+        self.profiler = StageProfiler(interval_s=args.profile_interval, window=args.profile_window)
         self.run_dir = Path(args.log_dir) / f"vision_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         self.run_dir.mkdir(parents=True, exist_ok=True)
+        self.db3_path = self.run_dir / f"{self.run_dir.name}.db3"
+        self.metadata_path = self.run_dir / "metadata.json"
         self.events = (self.run_dir / "vision_events.jsonl").open("w", encoding="utf-8")
         self.summary = (self.run_dir / "vision_summary.csv").open("w", newline="", encoding="utf-8")
         self.summary_writer = csv.DictWriter(
@@ -471,9 +496,73 @@ class RealVisionNode(Node):
         self.summary_writer.writeheader()
 
     def close(self) -> None:
-        self.mav.stop.set()
         self.events.close()
         self.summary.close()
+
+    @staticmethod
+    def intrinsics_to_dict(intr) -> dict:
+        return {
+            "width": intr.width,
+            "height": intr.height,
+            "ppx": intr.ppx,
+            "ppy": intr.ppy,
+            "fx": intr.fx,
+            "fy": intr.fy,
+            "model": str(intr.model),
+            "coeffs": list(intr.coeffs),
+        }
+
+    def write_metadata(self, profile, depth_scale: float) -> None:
+        device = profile.get_device()
+        device_info = {}
+        for info in [
+            rs.camera_info.name,
+            rs.camera_info.serial_number,
+            rs.camera_info.firmware_version,
+            rs.camera_info.product_id,
+        ]:
+            try:
+                device_info[str(info)] = device.get_info(info)
+            except Exception:
+                pass
+        color_intr = profile.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
+        depth_intr = profile.get_stream(rs.stream.depth).as_video_stream_profile().get_intrinsics()
+        metadata = {
+            "created_time_local": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "program": "real_vision_node.py",
+            "note": "This node owns the RealSense pipeline. Do not run another RealSense recorder at the same time.",
+            "model": self.args.model,
+            "conf": self.args.conf,
+            "device": self.args.device,
+            "db3_recording": {
+                "enabled": bool(self.args.record_db3),
+                "file": self.db3_path.name if self.args.record_db3 else None,
+                "source": "same RealSense pipeline as online vision",
+            },
+            "realsense": {
+                "device_info": device_info,
+                "width": self.args.width,
+                "height": self.args.height,
+                "fps": self.args.fps,
+                "color_format": "bgr8",
+                "depth_format": "z16",
+                "depth_scale_m_per_unit": depth_scale,
+                "color_intrinsics": self.intrinsics_to_dict(color_intr),
+                "depth_intrinsics": self.intrinsics_to_dict(depth_intr),
+            },
+            "mavros_topics": {
+                "state": self.args.state_topic,
+                "local_pose": self.args.local_pose_topic,
+            },
+            "outputs": {
+                "waypoint_topic": WAYPOINT_TOPIC,
+                "status_topic": STATUS_TOPIC,
+                "summary_csv": "vision_summary.csv",
+                "events_jsonl": "vision_events.jsonl",
+            },
+        }
+        with self.metadata_path.open("w", encoding="utf-8") as f:
+            json.dump(metadata, f, ensure_ascii=False, indent=2)
 
     def detect(self, color, depth, intr) -> List[Detection]:
         h, w = color.shape[:2]
@@ -500,26 +589,42 @@ class RealVisionNode(Node):
         cfg = rs.config()
         cfg.enable_stream(rs.stream.color, self.args.width, self.args.height, rs.format.bgr8, self.args.fps)
         cfg.enable_stream(rs.stream.depth, self.args.width, self.args.height, rs.format.z16, self.args.fps)
+        if self.args.record_db3:
+            cfg.enable_record_to_file(str(self.db3_path))
+            self.get_logger().info(f"Recording RealSense RGB-D db3: {self.db3_path}")
         profile = pipeline.start(cfg)
         align = rs.align(rs.stream.color)
         depth_scale = profile.get_device().first_depth_sensor().get_depth_scale()
         intr = profile.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
+        self.write_metadata(profile, depth_scale)
         frame_idx = 0
         try:
             while rclpy.ok():
+                t0 = time.perf_counter()
                 frames = align.process(pipeline.wait_for_frames())
                 color_frame = frames.get_color_frame()
                 depth_frame = frames.get_depth_frame()
+                t_capture = time.perf_counter()
                 if not color_frame or not depth_frame:
                     continue
-                pose = self.mav.latest()
+                rclpy.spin_once(self, timeout_sec=0.0)
+                pose = self.fc.latest()
+                t_pose = time.perf_counter()
                 if not pose.valid:
-                    rclpy.spin_once(self, timeout_sec=0.0)
+                    now_mono = time.monotonic()
+                    if now_mono - self.last_pose_wait_log >= 2.0:
+                        self.last_pose_wait_log = now_mono
+                        self.get_logger().info(
+                            f"Waiting for MAVROS pose: state_seen={self.fc.state_seen}, "
+                            f"pose_seen={self.fc.pose_seen}, connected={pose.connected}"
+                        )
                     continue
                 self.local_map.ensure(pose)
                 color = np.asanyarray(color_frame.get_data())
                 depth = np.asanyarray(depth_frame.get_data()).astype(np.float32) * depth_scale
+                t_convert = time.perf_counter()
                 detections = self.detect(color, depth, intr)
+                t_yolo = time.perf_counter()
                 local_dets = []
                 for det in detections:
                     north, east = body_to_world(det.body_right_m, det.body_forward_m, pose)
@@ -538,6 +643,7 @@ class RealVisionNode(Node):
                     self.local_map.origin_north, self.local_map.origin_east = new
                     self.local_map.rebase_count += 1
                     tracks = self.tracker.update([], now)
+                t_track = time.perf_counter()
                 safe, cost, reason = plan_safe(tracks, self.last_safe, pose, self.local_map)
                 self.last_safe = safe
                 valid = safe is not None
@@ -546,10 +652,27 @@ class RealVisionNode(Node):
                     self.publish_waypoint(safe_n, safe_e, pose.z_up, pose.yaw)
                 else:
                     safe_n = safe_e = None
+                t_plan = time.perf_counter()
                 self.publish_status(valid, safe_n, safe_e, safe, cost, reason, tracks)
+                t_publish = time.perf_counter()
                 self.log_frame(frame_idx, pose, valid, safe_n, safe_e, safe, reason, detections, tracks)
+                t_log = time.perf_counter()
                 frame_idx += 1
                 rclpy.spin_once(self, timeout_sec=0.0)
+                t_spin = time.perf_counter()
+                self.profiler.add(
+                    capture=t_capture - t0,
+                    pose=t_pose - t_capture,
+                    convert=t_convert - t_pose,
+                    yolo=t_yolo - t_convert,
+                    track=t_track - t_yolo,
+                    plan=t_plan - t_track,
+                    publish=t_publish - t_plan,
+                    log=t_log - t_publish,
+                    spin=t_spin - t_log,
+                    total=t_spin - t0,
+                )
+                self.profiler.maybe_print("REAL_PROFILE")
         finally:
             pipeline.stop()
 
@@ -557,13 +680,12 @@ class RealVisionNode(Node):
         msg = PoseStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = WAYPOINT_FRAME_ID
-        # MAVROS local_position/setpoint_position uses ENU, while raw APM
-        # LOCAL_POSITION_NED is north/east/down. Keep logs in APM NED terms,
-        # but publish waypoint coordinates in MAVROS ENU.
+        # MAVROS setpoint_position uses ENU. Logs and planner keep APM-style
+        # north/east/down terms, so publish x=east, y=north.
         msg.pose.position.x = float(east)
         msg.pose.position.y = float(north)
         msg.pose.position.z = float(z_up)
-        _, _, qz, qw = yaw_to_quat(yaw)
+        _, _, qz, qw = yaw_to_quat(ned_yaw_to_enu_yaw(yaw))
         msg.pose.orientation.z = qz
         msg.pose.orientation.w = qw
         self.wp_pub.publish(msg)
@@ -629,12 +751,18 @@ def parse_args():
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--conf", type=float, default=YOLO_CONF)
     parser.add_argument("--device", default="0")
-    parser.add_argument("--mavlink", default="/dev/ttyACM0")
-    parser.add_argument("--baud", type=int, default=57600)
+    parser.add_argument("--state-topic", default="/mavros/state")
+    parser.add_argument("--local-pose-topic", default="/mavros/local_position/pose")
+    parser.add_argument("--mavlink", default=None, help=argparse.SUPPRESS)
+    parser.add_argument("--baud", type=int, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--width", type=int, default=640)
     parser.add_argument("--height", type=int, default=480)
     parser.add_argument("--fps", type=int, default=30)
-    parser.add_argument("--log-dir", default="/home/zyc/real_drone/vision_logs")
+    parser.add_argument("--log-dir", default="~/real_drone/vision_logs")
+    parser.add_argument("--record-db3", action=argparse.BooleanOptionalAction, default=True,
+                        help="Record RGB-D to db3 using the same RealSense pipeline as the vision node.")
+    parser.add_argument("--profile-interval", type=float, default=2.0)
+    parser.add_argument("--profile-window", type=int, default=120)
     return parser.parse_args()
 
 

@@ -46,7 +46,7 @@ uav_rgbd_avoidance_extension_package.zip
 - 预测目标轨迹，生成安全降落点。
 - 仿真状态机控制无人机起飞、悬停、平飞、降落。
 - 提供真实飞控轻量程序。
-- 提供 D435i + MAVLink 录像和离线回放程序。
+- 提供 D435i 录像、MAVROS 飞控话题记录和离线回放程序。
 
 ## 2. 软件之间的关系
 
@@ -199,8 +199,10 @@ Ubuntu 自己的用户目录是：
 ```bash
 mkdir -p ~/Downloads
 ```
+手动复制：把两个压缩包拖过来
 
-尝试自动复制：
+
+自动复制（不推荐）：
 
 ```bash
 cp /mnt/c/Users/$USER/Downloads/uav_rgbd_base_sim_package.zip ~/Downloads/ 2>/dev/null || true
@@ -667,7 +669,7 @@ python3 -m py_compile sim_waypoint_node.py sim_landing_state_machine.py waypoint
 
 ```bash
 cd ~/real_drone
-python3 -m py_compile real_vision_node.py real_landing_state_machine.py record_d435i_mavlink.py
+python3 -m py_compile real_vision_node.py real_landing_state_machine.py flight_record_mavlink.py record_d435i_mavlink.py
 ```
 
 ## 18. 运行前检查
@@ -895,17 +897,3 @@ ls /mnt/c/Users
 cp /mnt/c/Users/你的Windows用户名/Downloads/uav_rgbd_base_sim_package.zip ~/Downloads/
 cp /mnt/c/Users/你的Windows用户名/Downloads/uav_rgbd_avoidance_extension_package.zip ~/Downloads/
 ```
-
-## 22. GitHub 发布
-
-如果你要把项目上传 GitHub，看：
-
-```text
-GITHUB_RELEASE_GUIDE.md
-```
-
-发布时建议：
-
-- 仓库里放源码和文档。
-- Release 附件上传两个 zip。
-- 不要把 rosbag、视频、大日志、ArduPilot 完整源码传到 GitHub。

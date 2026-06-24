@@ -22,6 +22,12 @@
 - 非必要 TensorRT engine
 - ArduPilot 完整源码
 
+实机程序当前采用 MAVROS 中心结构：
+
+- `real_vision_node.py` 读取 D435i，并订阅 MAVROS 位姿/状态生成安全点。
+- `real_landing_state_machine.py` 订阅安全点，并向 MAVROS 发布位置 setpoint。
+- `flight_record_mavlink.py` 只记录 MAVROS 飞控话题，不直接打开飞控串口。
+
 本迁移包允许包含仿真专用模型：
 
 - `vision_avoid/irreality.pt`

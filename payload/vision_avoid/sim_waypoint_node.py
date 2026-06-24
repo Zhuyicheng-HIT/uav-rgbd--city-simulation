@@ -63,6 +63,7 @@ import os
 import csv
 import sqlite3
 import time
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -82,6 +83,38 @@ except ImportError:  # 允许只调试 ROS2 .db3 时没有 pyrealsense2，但 Re
     rs = None
 
 from ultralytics import YOLO
+
+
+
+class StageProfiler:
+    def __init__(self, interval_s: float = 2.0, window: int = 120) -> None:
+        self.interval_s = interval_s
+        self.samples = defaultdict(lambda: deque(maxlen=window))
+        self.last_print = time.monotonic()
+
+    def add(self, **seconds: float) -> None:
+        for name, value in seconds.items():
+            self.samples[name].append(max(0.0, float(value)))
+
+    def maybe_print(self, prefix: str = "PROFILE") -> None:
+        now = time.monotonic()
+        if now - self.last_print < self.interval_s:
+            return
+        self.last_print = now
+        order = ["pose", "stabilize", "yolo", "track", "plan_publish", "display", "total"]
+        parts = []
+        total_avg = None
+        for name in order:
+            vals = self.samples.get(name)
+            if not vals:
+                continue
+            avg_ms = sum(vals) / len(vals) * 1000.0
+            if name == "total":
+                total_avg = sum(vals) / len(vals)
+            parts.append(f"{name}={avg_ms:.1f}ms")
+        if total_avg and total_avg > 0:
+            parts.append(f"fps={1.0 / total_avg:.1f}")
+        print(prefix + " " + " ".join(parts), flush=True)
 
 
 # =========================================================
@@ -2735,6 +2768,7 @@ class VisionWaypointSystem:
         self.last_print_time = 0.0
         self.last_profile_time = 0.0
         self.last_frame_time = time.time()
+        self.profiler = StageProfiler(interval_s=PROFILE_INTERVAL_S)
         self.frame_count = 0
         self.video_writer = None
         self.output_path: Optional[Path] = None
@@ -2974,20 +3008,17 @@ class VisionWaypointSystem:
                     return False
         t_display = time.perf_counter()
 
-        if PROFILE_ENABLE and current_time - self.last_profile_time >= PROFILE_INTERVAL_S:
-            total_ms = (t_display - t0) * 1000.0
-            print(
-                "PROFILE "
-                f"pose={(t_pose - t0) * 1000.0:.1f}ms "
-                f"stab={(t_stabilize - t_pose) * 1000.0:.1f}ms "
-                f"yolo={(t_detect - t_stabilize) * 1000.0:.1f}ms "
-                f"track={(t_track - t_detect) * 1000.0:.1f}ms "
-                f"plan={(t_plan - t_track) * 1000.0:.1f}ms "
-                f"draw={(t_display - t_plan) * 1000.0:.1f}ms "
-                f"total={total_ms:.1f}ms fps={1000.0 / max(total_ms, 1e-6):.1f} "
-                f"device={self.yolo_device}"
+        if PROFILE_ENABLE:
+            self.profiler.add(
+                pose=t_pose - t0,
+                stabilize=t_stabilize - t_pose,
+                yolo=t_detect - t_stabilize,
+                track=t_track - t_detect,
+                plan_publish=t_plan - t_track,
+                display=t_display - t_plan,
+                total=t_display - t0,
             )
-            self.last_profile_time = current_time
+            self.profiler.maybe_print(f"SIM_PROFILE device={self.yolo_device}")
 
         self.frame_count += 1
         return True

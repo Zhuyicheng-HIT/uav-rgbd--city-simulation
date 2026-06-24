@@ -18,6 +18,11 @@ EXCLUDE_SUFFIXES = {
     ".engine",
     ".onnx",
 }
+INCLUDE_LARGE_FILES = {
+    "payload/vision_avoid/irreality.pt",
+    "payload/vision_avoid/irreality.engine",
+    "payload/vision_sim_ws/models/irreality.pt",
+}
 
 
 def iter_files():
@@ -27,9 +32,10 @@ def iter_files():
         rel = path.relative_to(ROOT)
         if any(part in EXCLUDE_DIRS for part in rel.parts):
             continue
-        if path.suffix.lower() in EXCLUDE_SUFFIXES:
+        rel_posix = rel.as_posix()
+        if path.suffix.lower() in EXCLUDE_SUFFIXES and rel_posix not in INCLUDE_LARGE_FILES:
             continue
-        if rel.as_posix() == "SHA256SUMS.txt":
+        if rel_posix == "SHA256SUMS.txt":
             continue
         yield path
 
@@ -60,4 +66,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

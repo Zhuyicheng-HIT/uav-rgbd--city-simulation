@@ -1,4 +1,4 @@
-# 无人机 RGB-D 视觉避障仿真系统：快速安装版
+﻿# 无人机 RGB-D 视觉避障仿真系统：快速安装版
 
 本页适合直接复制命令。零基础解释、每个软件的作用、版本原因、排错方法见：
 
@@ -198,7 +198,7 @@ cd ~/vision_avoid
 python3 -m py_compile sim_waypoint_node.py sim_landing_state_machine.py waypoint_node.py
 
 cd ~/real_drone
-python3 -m py_compile real_vision_node.py real_landing_state_machine.py record_d435i_mavlink.py
+python3 -m py_compile real_vision_node.py real_landing_state_machine.py flight_record_mavlink.py record_d435i_mavlink.py
 ```
 
 ## 8. 添加环境变量
@@ -264,4 +264,5 @@ source /opt/ros/humble/setup.bash
 source ~/vision_sim_ws/install/setup.bash
 python3 sim_waypoint_node.py
 ```
+
 
